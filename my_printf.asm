@@ -1,3 +1,4 @@
+default rel
 section .text
 
 ; global _start
@@ -48,7 +49,7 @@ my_printf:
         mov qword flt_cnt, 0
 
         mov rdi, fmt_ptr        ; rdi = frm str for all func  
-        mov r8,  buffer_out     ; r8  = buffer out ptr for all func
+        lea r8, [buffer_out]    ; r8  = buffer out ptr for all func
         xor r9, r9              ; r9  = buffer offset ptr for all func
 
         ; ========== func begin ===========
@@ -140,19 +141,28 @@ prcsng_spec:
         mov al, [rdi]       ; take letter after %
 
         cmp rax, 'b'        
-        jb unknown_spec
+        jb bad_spec
         cmp rax, 'x'          
-        ja unknown_spec     ; if unc format
+        ja bad_spec         ; if unc format
+
+normal_spec:
 
         sub rax, 'b'
 
-        mov rsi, [jump_table_spec + rax*8]
+        lea rsi, [jump_table_spec]  ; get call adres
+        mov rdx, [rsi + rax*8]
+        add rsi, rdx
         call rsi
   
 end_spec_prcsng:
 
         inc rdi
         jmp buffer_going
+
+bad_spec:
+
+        call prcsng_un
+        jmp end_spec_prcsng
 
 ;______________________________________________________________________________________________________________________________________
 ;
@@ -163,11 +173,6 @@ end_spec_prcsng:
 ;============================================
 ;              processing unknown
 ;============================================
-
-unknown_spec:               
-
-        mov rdx, end_spec_prcsng    
-        push rdx ; push ret adres
 
 prcsng_un:
 
@@ -504,14 +509,28 @@ prcsng_f:
 
         call take_flt
 
+; ============ check if inf/nan =============
+
+        movd edx, xmm8              ; edx = IEEE 754 32-bit
+
+        mov eax, edx                ; copy edx in eax
+        and eax, 0x7F800000         ; take exp
+        cmp eax, 0x7F800000         ; if exp not 111...
+        jne default_flt
+
+        and edx, 0x007FFFFF         ; take M
+        cmp edx, 0                  ; if M == 0 
+        jne if_nan                                      
+        jmp if_inf
+
+default_flt:       
+
         cvttss2si edx, xmm8        ; take integer part of xmm8
-
-        cvtsi2ss xmm9, edx        ; xmm9 = (float) edx
-
+        cvtsi2ss xmm9, edx         ; xmm9 = (float) edx
         subss xmm8, xmm9           ; xmm8 = xmm8 - [xmm8]
 
         call flt_out_help          ; output int part
-        mov byte [r8 + r9], '.'         ; put dot
+        mov byte [r8 + r9], '.'    ; put dot
         inc r9
 
         movd xmm9, [million_flt]   ; xmm9 = 1000000,0
@@ -530,9 +549,22 @@ without_sign:
 
         ret
 
-prcsng_l:
-prcsng_u:
+; ============= if nan ===============
+if_nan:
+        mov byte [r8 + r9], 'N'
+        mov byte [r8 + r9 + 1], 'A'
+        mov byte [r8 + r9 + 2], 'N'
+        add r9, 3
 
+        ret
+; ============ if inf ===============
+if_inf:
+        mov byte [r8 + r9], 'i'
+        mov byte [r8 + r9 + 1], 'n'
+        mov byte [r8 + r9 + 2], 'f'
+        add r9, 3
+
+        ret
 ;______________________________________________________________________________________________________________________________________
 ;
 ;                                               FUNCTIONS FOT TAKING ARGS
@@ -595,11 +627,13 @@ take_flt:
 
         mov rax, flt_cnt
 
-        cmp rax, 8              ; if flt args > 6, take from stack
+        cmp rax, 8                ; if flt args > 6, take from stack
         jae stack_f_argument    
 
-        mov rsi, [float_args + rax*8]
-        jmp rsi                 ; jump on current arg
+        lea rsi, [float_args]     ; get jump adres
+        mov rdx, [rsi + rax*8]
+        add rsi, rdx
+        jmp rsi                   ; jump on current arg
 
 ; ===== proccesing args in regs =====
 
@@ -699,29 +733,29 @@ section .rodata
 jump_table_spec:
 align 8
 
-    dq prcsng_b      ; 0  = 'b'
-    dq prcsng_c      ; 1  = 'c'
-    dq prcsng_d      ; 2  = 'd'
-    dq prcsng_un     ; 3  = 'e'
-    dq prcsng_f      ; 4  = 'f'
-    dq prcsng_un     ; 5  = 'g'
-    dq prcsng_un     ; 6  = 'h'
-    dq prcsng_d      ; 7  = 'i'
-    dq prcsng_un     ; 8  = 'j'
-    dq prcsng_un     ; 9  = 'k'
-    dq prcsng_l      ; 10 = 'l'
-    dq prcsng_un     ; 11 = 'm'
-    dq prcsng_un     ; 12 = 'n'
-    dq prcsng_o      ; 13 = 'o'
-    dq prcsng_p      ; 14 = 'p'
-    dq prcsng_un     ; 15 = 'q'
-    dq prcsng_un     ; 16 = 'r'
-    dq prcsng_s      ; 17 = 's'
-    dq prcsng_un     ; 18 = 't'
-    dq prcsng_u      ; 19 = 'u'
-    dq prcsng_un     ; 20 = 'v'
-    dq prcsng_un     ; 21 = 'w'
-    dq prcsng_x      ; 22 = 'x'
+    dq prcsng_b  - jump_table_spec      ; 0  = 'b'
+    dq prcsng_c  - jump_table_spec      ; 1  = 'c'
+    dq prcsng_d  - jump_table_spec      ; 2  = 'd'
+    dq prcsng_un - jump_table_spec      ; 3  = 'e'
+    dq prcsng_f  - jump_table_spec      ; 4  = 'f'
+    dq prcsng_un - jump_table_spec      ; 5  = 'g'
+    dq prcsng_un - jump_table_spec      ; 6  = 'h'
+    dq prcsng_d  - jump_table_spec      ; 7  = 'i'
+    dq prcsng_un - jump_table_spec      ; 8  = 'j'
+    dq prcsng_un - jump_table_spec      ; 9  = 'k'
+    dq prcsng_un - jump_table_spec      ; 10 = 'l'
+    dq prcsng_un - jump_table_spec      ; 11 = 'm'
+    dq prcsng_un - jump_table_spec      ; 12 = 'n'
+    dq prcsng_o  - jump_table_spec      ; 13 = 'o'
+    dq prcsng_p  - jump_table_spec      ; 14 = 'p'
+    dq prcsng_un - jump_table_spec      ; 15 = 'q'
+    dq prcsng_un - jump_table_spec      ; 16 = 'r'
+    dq prcsng_s  - jump_table_spec      ; 17 = 's'
+    dq prcsng_un - jump_table_spec      ; 18 = 't'
+    dq prcsng_un - jump_table_spec      ; 19 = 'u'
+    dq prcsng_un - jump_table_spec      ; 20 = 'v'
+    dq prcsng_un - jump_table_spec      ; 21 = 'w'
+    dq prcsng_x  - jump_table_spec      ; 22 = 'x'
 
 
 ; ======== JUMP TABLE FOR FLOAT ARGS ==========
@@ -729,14 +763,14 @@ align 8
 float_args:
 align 8 
 
-    dq arg1
-    dq arg2
-    dq arg3
-    dq arg4
-    dq arg5
-    dq arg6
-    dq arg7
-    dq arg8
+    dq arg1 - float_args
+    dq arg2 - float_args
+    dq arg3 - float_args
+    dq arg4 - float_args
+    dq arg5 - float_args
+    dq arg6 - float_args
+    dq arg7 - float_args
+    dq arg8 - float_args
 
 
 ; ============================================================================================================================
