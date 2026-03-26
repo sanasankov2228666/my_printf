@@ -150,8 +150,8 @@ normal_spec:
         sub rax, 'b'
 
         lea rsi, [jump_table_spec]  ; get call adres
-        mov rdx, [rsi + rax*8]
-        add rsi, rdx
+        mov rdx, [rsi + rax*8]      ; take offset
+        add rsi, rdx                ; get abs adres
         call rsi
   
 end_spec_prcsng:
@@ -185,6 +185,8 @@ prcsng_un:
 end_frmt_str:
 
         ret
+
+; ___________________________________________________________________
 
 ;============================================
 ;               processing bin
@@ -246,6 +248,8 @@ ret_bin:
 
         ret
 
+; ___________________________________________________________________
+
 ;============================================
 ;               processing char
 ;============================================
@@ -260,6 +264,8 @@ prcsng_c:
         inc r9
 
         ret
+
+; ___________________________________________________________________
 
 ;============================================
 ;                processing d
@@ -285,8 +291,6 @@ positive:
 
         sub rsp, 32             ; buffer for number
         mov rsi, rsp
-        add rsi, 31
-        mov byte [rsi], 0       ; end of buffer
 
         mov ebx, 10             ; bx = 10
 
@@ -319,6 +323,8 @@ copy_in_buffer:
 
         add rsp, 32
         ret
+
+; ___________________________________________________________________
 
 ;============================================
 ;               processing string
@@ -381,6 +387,8 @@ ret_hex:
 
         ret
 
+; ___________________________________________________________________
+
 ;============================================
 ;               processing pointer
 ;============================================
@@ -414,6 +422,8 @@ is_digit_ptr:
         loop loop_ptr
 
         ret        
+
+; ___________________________________________________________________
 
 ;============================================
 ;             processing octagone
@@ -462,6 +472,8 @@ copy_in_buffer_hex:
         add rsp, 32
         ret
 
+; ___________________________________________________________________
+
 ;============================================
 ;              processing string
 ;============================================
@@ -501,6 +513,8 @@ end_loop_prc_s:
 
         ret
 
+; ___________________________________________________________________
+
 ;============================================
 ;              processing float
 ;============================================
@@ -511,43 +525,81 @@ prcsng_f:
 
 ; ============ check if inf/nan =============
 
-        movd edx, xmm8              ; edx = IEEE 754 32-bit
+        movd edx, xmm8            ; edx = IEEE 754 32-bit
+        test edx, edx                   
+        jns pos_flot
 
-        mov eax, edx                ; copy edx in eax
-        and eax, 0x7F800000         ; take exp
-        cmp eax, 0x7F800000         ; if exp not 111...
+        mov byte [r8 + r9], '-'        ; check if neg
+        inc r9                    
+        and edx, 0x7FFFFFFF       ; put sign bit in 0
+        movd xmm8, edx            ; ret xmm8
+
+pos_flot:
+
+        mov eax, edx              ; copy edx in eax
+        and eax, 0x7F800000       ; take exp
+        cmp eax, 0x7F800000       ; if exp not 111...
         jne default_flt
 
-        and edx, 0x007FFFFF         ; take M
-        cmp edx, 0                  ; if M == 0 
+        and edx, 0x007FFFFF       ; take M
+        cmp edx, 0                ; if M == 0 
         jne if_nan                                      
         jmp if_inf
 
 default_flt:       
 
-        cvttss2si edx, xmm8        ; take integer part of xmm8
-        cvtsi2ss xmm9, edx         ; xmm9 = (float) edx
-        subss xmm8, xmm9           ; xmm8 = xmm8 - [xmm8]
+        cvttss2si edx, xmm8      ; take integer part of xmm8
+        cvtsi2ss xmm9, edx       ; xmm9 = (float) edx
+        subss xmm8, xmm9         ; xmm8 = xmm8 - [xmm8]
 
-        call flt_out_help          ; output int part
-        mov byte [r8 + r9], '.'    ; put dot
+        call flt_out_help        ; output int part
+        mov byte [r8 + r9], '.'  ; put dot
         inc r9
 
-        movd xmm9, [million_flt]   ; xmm9 = 1000000,0
-        mulss xmm8, xmm9           ; xmm8 = xmm8 * 10^6
+        movd xmm9, [million_flt] ; xmm9 = 1000000,0
+        mulss xmm8, xmm9         ; xmm8 = xmm8 * 10^6
 
-        cvttss2si edx, xmm8        ; put int in edx
+        cvttss2si edx, xmm8      ; put int in edx
 
         test edx, edx
-        jns without_sign           ; if >= 0
+        jns print_frac           ; if >= 0
 
-        neg edx                    ; take abs
+        neg edx                  ; take abs
 
-without_sign:           
+; ============= printing frac part ==============
 
-        call flt_out_help          ; output fractional part
+print_frac:           
 
-        ret
+        mov eax, edx            ; eax - divisible
+        sub rsp, 32             ; buffer for number
+        mov rsi, rsp
+
+        mov ebx, 10             ; ebx = 10 - divider
+        mov rcx, 6
+
+loop_scaning:
+
+        xor edx, edx
+        div ebx
+        add dl, '0'
+
+        dec rsi
+        mov [rsi], dl
+        loop loop_scaning
+
+        mov rcx, 6
+
+put_frac_buf:
+
+        mov al, [rsi]
+        mov [r8 + r9], al
+
+        inc r9
+        inc rsi
+        loop put_frac_buf
+
+        add rsp, 32
+        ret        
 
 ; ============= if nan ===============
 if_nan:
@@ -557,7 +609,7 @@ if_nan:
         add r9, 3
 
         ret
-; ============ if inf ===============
+; ============= if inf ===============
 if_inf:
         mov byte [r8 + r9], 'i'
         mov byte [r8 + r9 + 1], 'n'
@@ -565,6 +617,7 @@ if_inf:
         add r9, 3
 
         ret
+
 ;______________________________________________________________________________________________________________________________________
 ;
 ;                                               FUNCTIONS FOT TAKING ARGS
@@ -631,8 +684,8 @@ take_flt:
         jae stack_f_argument    
 
         lea rsi, [float_args]     ; get jump adres
-        mov rdx, [rsi + rax*8]
-        add rsi, rdx
+        mov rdx, [rsi + rax*8]    ; take offset
+        add rsi, rdx              ; get abs adres
         jmp rsi                   ; jump on current arg
 
 ; ===== proccesing args in regs =====

@@ -3,7 +3,7 @@
 #include <float.h>
 #include <math.h>
 
-extern int my_printf(const char *format, ...);
+extern void my_printf(const char *format, ...);
 
 int main(void)
 {
