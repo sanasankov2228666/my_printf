@@ -11,7 +11,7 @@ global my_printf
 ; =====================================  my_printf  =====================================
 ;                       
 ; 	entery:    rdi - format string
-;              rsi, rdx, rcx, r8, r9, stack from right to left - substitutions args
+;                  rsi, rdx, rcx, r8, r9, stack from right to left - substitutions args
 ;
 ; 	exit:      rax - num of outputed symbols                               
 ; 	expected:  
@@ -149,10 +149,8 @@ normal_spec:
 
         sub rax, 'b'
 
-        lea rsi, [jump_table_spec]  ; get call adres
-        mov rdx, [rsi + rax*8]      ; take offset
-        add rsi, rdx                ; get abs adres
-        call rsi
+        lea rsi, [jump_table_spec]
+        jmp [rsi + rax*8]
   
 end_spec_prcsng:
 
@@ -684,9 +682,7 @@ take_flt:
         jae stack_f_argument    
 
         lea rsi, [float_args]     ; get jump adres
-        mov rdx, [rsi + rax*8]    ; take offset
-        add rsi, rdx              ; get abs adres
-        jmp rsi                   ; jump on current arg
+        jmp [rsi + rax*8]         ; jump on current arg
 
 ; ===== proccesing args in regs =====
 
@@ -774,41 +770,32 @@ align 8
 
     million_flt: dd 1000000.0
 
-
-; ============================================================================================================================
-;                                                      RODATA
-; ============================================================================================================================
-
-section .rodata
-
-; ======== JUMP TABLE FOR SPEC ==========
-
 jump_table_spec:
 align 8
 
-    dq prcsng_b  - jump_table_spec      ; 0  = 'b'
-    dq prcsng_c  - jump_table_spec      ; 1  = 'c'
-    dq prcsng_d  - jump_table_spec      ; 2  = 'd'
-    dq prcsng_un - jump_table_spec      ; 3  = 'e'
-    dq prcsng_f  - jump_table_spec      ; 4  = 'f'
-    dq prcsng_un - jump_table_spec      ; 5  = 'g'
-    dq prcsng_un - jump_table_spec      ; 6  = 'h'
-    dq prcsng_d  - jump_table_spec      ; 7  = 'i'
-    dq prcsng_un - jump_table_spec      ; 8  = 'j'
-    dq prcsng_un - jump_table_spec      ; 9  = 'k'
-    dq prcsng_un - jump_table_spec      ; 10 = 'l'
-    dq prcsng_un - jump_table_spec      ; 11 = 'm'
-    dq prcsng_un - jump_table_spec      ; 12 = 'n'
-    dq prcsng_o  - jump_table_spec      ; 13 = 'o'
-    dq prcsng_p  - jump_table_spec      ; 14 = 'p'
-    dq prcsng_un - jump_table_spec      ; 15 = 'q'
-    dq prcsng_un - jump_table_spec      ; 16 = 'r'
-    dq prcsng_s  - jump_table_spec      ; 17 = 's'
-    dq prcsng_un - jump_table_spec      ; 18 = 't'
-    dq prcsng_un - jump_table_spec      ; 19 = 'u'
-    dq prcsng_un - jump_table_spec      ; 20 = 'v'
-    dq prcsng_un - jump_table_spec      ; 21 = 'w'
-    dq prcsng_x  - jump_table_spec      ; 22 = 'x'
+    dq prcsng_b      ; 0  = 'b'
+    dq prcsng_c      ; 1  = 'c'
+    dq prcsng_d      ; 2  = 'd'
+    dq prcsng_un     ; 3  = 'e'
+    dq prcsng_f      ; 4  = 'f'
+    dq prcsng_un     ; 5  = 'g'
+    dq prcsng_un     ; 6  = 'h'
+    dq prcsng_d      ; 7  = 'i'
+    dq prcsng_un     ; 8  = 'j'
+    dq prcsng_un     ; 9  = 'k'
+    dq prcsng_un     ; 10 = 'l'
+    dq prcsng_un     ; 11 = 'm'
+    dq prcsng_un     ; 12 = 'n'
+    dq prcsng_o      ; 13 = 'o'
+    dq prcsng_p      ; 14 = 'p'
+    dq prcsng_un     ; 15 = 'q'
+    dq prcsng_un     ; 16 = 'r'
+    dq prcsng_s      ; 17 = 's'
+    dq prcsng_un     ; 18 = 't'
+    dq prcsng_un     ; 19 = 'u'
+    dq prcsng_un     ; 20 = 'v'
+    dq prcsng_un     ; 21 = 'w'
+    dq prcsng_x      ; 22 = 'x'
 
 
 ; ======== JUMP TABLE FOR FLOAT ARGS ==========
@@ -816,14 +803,65 @@ align 8
 float_args:
 align 8 
 
-    dq arg1 - float_args
-    dq arg2 - float_args
-    dq arg3 - float_args
-    dq arg4 - float_args
-    dq arg5 - float_args
-    dq arg6 - float_args
-    dq arg7 - float_args
-    dq arg8 - float_args
+    dq arg1
+    dq arg2
+    dq arg3
+    dq arg4
+    dq arg5
+    dq arg6
+    dq arg7
+    dq arg8
+
+
+; ============================================================================================================================
+;                                                      RODATA
+; ============================================================================================================================
+
+; section .rodata
+
+; ; ======== JUMP TABLE FOR SPEC ==========
+
+; jump_table_spec:
+; align 8
+
+;     dq prcsng_b  - jump_table_spec      ; 0  = 'b'
+;     dq prcsng_c  - jump_table_spec      ; 1  = 'c'
+;     dq prcsng_d  - jump_table_spec      ; 2  = 'd'
+;     dq prcsng_un - jump_table_spec      ; 3  = 'e'
+;     dq prcsng_f  - jump_table_spec      ; 4  = 'f'
+;     dq prcsng_un - jump_table_spec      ; 5  = 'g'
+;     dq prcsng_un - jump_table_spec      ; 6  = 'h'
+;     dq prcsng_d  - jump_table_spec      ; 7  = 'i'
+;     dq prcsng_un - jump_table_spec      ; 8  = 'j'
+;     dq prcsng_un - jump_table_spec      ; 9  = 'k'
+;     dq prcsng_un - jump_table_spec      ; 10 = 'l'
+;     dq prcsng_un - jump_table_spec      ; 11 = 'm'
+;     dq prcsng_un - jump_table_spec      ; 12 = 'n'
+;     dq prcsng_o  - jump_table_spec      ; 13 = 'o'
+;     dq prcsng_p  - jump_table_spec      ; 14 = 'p'
+;     dq prcsng_un - jump_table_spec      ; 15 = 'q'
+;     dq prcsng_un - jump_table_spec      ; 16 = 'r'
+;     dq prcsng_s  - jump_table_spec      ; 17 = 's'
+;     dq prcsng_un - jump_table_spec      ; 18 = 't'
+;     dq prcsng_un - jump_table_spec      ; 19 = 'u'
+;     dq prcsng_un - jump_table_spec      ; 20 = 'v'
+;     dq prcsng_un - jump_table_spec      ; 21 = 'w'
+;     dq prcsng_x  - jump_table_spec      ; 22 = 'x'
+
+
+; ; ======== JUMP TABLE FOR FLOAT ARGS ==========
+
+; float_args:
+; align 8 
+
+;     dq arg1 - float_args
+;     dq arg2 - float_args
+;     dq arg3 - float_args
+;     dq arg4 - float_args
+;     dq arg5 - float_args
+;     dq arg6 - float_args
+;     dq arg7 - float_args
+;     dq arg8 - float_args
 
 
 ; ============================================================================================================================
