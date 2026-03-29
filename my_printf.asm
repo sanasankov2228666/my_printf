@@ -1,7 +1,7 @@
 default rel
-section .text
+extern printf
 
-; global _start
+section .text
 
 global my_printf
 
@@ -88,6 +88,63 @@ end_buffer_going:
 
         call buf_output
 
+; ============ call printf ==============
+
+        xor rcx, rcx
+
+        mov rbx, int_cnt
+        cmp rbx, 5
+        jb reg_args_int
+
+        sub rbx, 5          ; if more than 5 int args
+        add rcx, rbx
+
+reg_args_int:
+
+        mov rbx, flt_cnt
+        cmp rbx, 8
+        jb reg_args_flt
+
+        sub rbx, 8          ; if more than 8 flt args
+        add rcx, rbx
+
+reg_args_flt:
+
+        mov rbx, rsp        ; save rsp
+
+        mov rax, rcx
+        shl rax, 3          ; rax = rcx * 8
+        sub rsp, rax        ; alocate memory for stack params
+
+        and rsp, -16        ; alignment 16
+
+        xor rax, rax
+
+copy_args_loop:
+
+        cmp rax, rcx
+        jae end_put_args
+
+        mov rdx, [rbp + 24 + rax*8] 
+        mov [rsp + rax*8], rdx    
+
+        inc rax
+        jmp copy_args_loop  
+
+end_put_args:
+
+        mov rdi, [rbp-8]
+        mov r9,  [rbp-16]
+        mov r8,  [rbp-24]
+        mov rcx, [rbp-32]
+        mov rdx, [rbp-40]
+        mov rsi, [rbp-48]
+        mov rax, [rbp-56]
+
+        call printf wrt ..plt
+
+        mov rsp, rbx
+
 ; ======= get saved regs ========
 
         add rsp, 16
@@ -118,14 +175,16 @@ end_buffer_going:
 buf_output:
 
         mov rax, 0x01
-        mov fmt_ptr, rdi
+        mov rdx, r9             ; rdx = len
+
+        mov r9, rdi             ; save old fmt str ptr
+
         mov rdi, 1              ; stdout
         mov rsi, r8             ; rsi = buffer
-        mov rdx, r9             ; rdx = len
         syscall                 ; write (stdout, buffer, len)
 
-        mov rdi, fmt_ptr
-        xor r9, r9
+        mov rdi, r9             ; get saved rdi
+        xor r9, r9              ; offset = 0
 
         ret
 
@@ -148,9 +207,9 @@ prcsng_spec:
 normal_spec:
 
         sub rax, 'b'
-
+        
         lea rsi, [jump_table_spec]
-        jmp [rsi + rax*8]
+        call [rsi + rax*8]
   
 end_spec_prcsng:
 
@@ -187,64 +246,86 @@ end_frmt_str:
 ; ___________________________________________________________________
 
 ;============================================
-;               processing bin
+;           processing power 2
 ;============================================
 
-prcsng_b:
+prcsng_p2:
 
-        call take_int
-        mov rcx, 32
+        sub rsp, 32
+        mov rsi, rsp
 
-        mov byte [r8 + r9], '0'
-        inc r9
-        mov byte [r8 + r9], 'b'
-        inc r9
+; ========== convert loop ===========
 
-        test rdx, rdx
-        jne skip_zero_b          ; if not 0
-
-        mov byte [r8 + r9], '0'  ; if 0
-        inc r9
-
-        jmp ret_bin
-
-skip_zero_b:
-
-        dec rcx
+convert_p2:
 
         mov eax, edx
-        shr eax, cl              ; put 0 or 1 from number on cx place in begin
-        and eax, 1
+        and eax, ebx
 
-        cmp eax, 0
-        je skip_zero_b
+        cmp al, 10
+        jl is_digit
 
-        add al, '0'              ; al = asci code
-        mov [r8 + r9], al        ; put sym in buffer
-        inc r9
+        add al, 7
 
-        test rcx, rcx            ; if end of number
-        je ret_bin                 
-
-loop_out_b:
-
-        dec rcx
-
-        mov eax, edx
-        shr eax, cl
-        and eax, 1 
+is_digit:
 
         add al, '0'
+        mov [rsi], al
+        shr edx, cl
+
+        dec rsi
+        inc ch
+
+        test edx, edx
+        jnz convert_p2
+
+; =========== end convert ==========
+
+copy_buf_p2:
+
+        inc rsi
+        mov al, [rsi]
 
         mov [r8 + r9], al
         inc r9
 
-        test rcx, rcx
-        jnz loop_out_b
+        dec ch
+        jnz copy_buf_p2
 
-ret_bin:
-
+        add rsp, 32
         ret
+
+; ___________________________________________________________________
+
+;============================================
+;            trampolines for p2
+;============================================
+
+ prcsng_b:
+
+        call take_int
+
+        mov rcx, 1
+        mov rbx, 1
+
+        jmp prcsng_p2
+
+ prcsng_o:
+
+        call take_int
+
+        mov rcx, 3
+        mov rbx, 7
+
+        jmp prcsng_p2
+
+ prcsng_x:
+
+        call take_int
+
+        mov rcx, 4
+        mov rbx, 15
+
+        jmp prcsng_p2
 
 ; ___________________________________________________________________
 
@@ -324,68 +405,6 @@ copy_in_buffer:
 
 ; ___________________________________________________________________
 
-;============================================
-;               processing string
-;============================================
-
-prcsng_x:
-
-        call take_int
-        mov ecx, 8 
-
-        mov byte [r8 + r9], '0'
-        inc r9
-        mov byte [r8 + r9], 'x'
-        inc r9
-
-        test rdx, rdx
-        jne skip_zero_hex          ; if not 0
-
-        mov byte [r8 + r9], '0'    ; if 0
-        inc r9
-        jmp ret_hex
-
-skip_zero_hex:
-
-        dec cx
-        rol edx, 4           ; put last 4 bytes in the begin
-        mov al, dl                  
-        and al, 0Fh          ; put this number in al
-
-        cmp al, 0                  
-        je skip_zero_hex     ; if still zero
-
-        inc rcx
-        cmp al, 10
-    	jl is_digit          ; output not zero sym
-
-        add al, 7
-
-        jmp is_digit
-        
-loop_hex:
-
-        rol edx, 4
-        mov al, dl
-        and al, 0Fh
-
-        cmp al, 10
-   	    jl is_digit
-
-        add al, 7
-
-is_digit:
-
-    	add al, '0'
-        mov [r8 + r9], al
-        inc r9
-        loop loop_hex
-
-ret_hex:
-
-        ret
-
-; ___________________________________________________________________
 
 ;============================================
 ;               processing pointer
@@ -420,55 +439,6 @@ is_digit_ptr:
         loop loop_ptr
 
         ret        
-
-; ___________________________________________________________________
-
-;============================================
-;             processing octagone
-;============================================
-
-prcsng_o:
-
-        call take_int
-        mov eax, edx
-        xor rcx, rcx
-
-        sub rsp, 32               ; buffer for number
-        mov rsi, rsp
-        add rsi, 31
-        mov byte [rsi], 0         ; end of buffer
-
-        mov ebx, 8                ; bx = 10
-
-; ========== loop processing oct ==========
-
-convert_oct:
-
-        xor edx, edx
-        div ebx
-        add dl, '0'
-
-        dec rsi
-        mov [rsi], dl
-        inc rcx
-
-        test eax, eax
-        jnz convert_oct
-
-; =============== end loop ================
-
-copy_in_buffer_hex:
-
-        mov al, [rsi]
-        mov [r8 + r9], al
-
-        inc r9
-        inc rsi
-        dec rcx
-        jnz copy_in_buffer_hex
-
-        add rsp, 32
-        ret
 
 ; ___________________________________________________________________
 
@@ -736,42 +706,18 @@ ret_take:
 
 ;__________________________________________________________________________________________________________________________________________
 
-
-; ============================================================================================================================
-;                                                       MAIN
-; ============================================================================================================================
-
-; _start:
-
-;         mov rdi, format_str
-;         mov rsi, str
-;         mov rdx, 65
-;         mov rcx, 123
-;         mov r8, 234
-;         mov r9, -345
-;         push 1234
-;         push 2345
-
-;         call my_printf
-
-;         mov rax, 0x3C
-;         xor rdi, rdi
-;         syscall
-
-
-; _______________________________________________________________________________________________________________________________________
-
 ; ============================================================================================================================
 ;                                                       DATA
 ; ============================================================================================================================
 
 section .data
+
 align 8
 
     million_flt: dd 1000000.0
 
-jump_table_spec:
 align 8
+jump_table_spec:
 
     dq prcsng_b      ; 0  = 'b'
     dq prcsng_c      ; 1  = 'c'
@@ -797,11 +743,10 @@ align 8
     dq prcsng_un     ; 21 = 'w'
     dq prcsng_x      ; 22 = 'x'
 
-
 ; ======== JUMP TABLE FOR FLOAT ARGS ==========
 
-float_args:
 align 8 
+float_args:
 
     dq arg1
     dq arg2
@@ -811,58 +756,6 @@ align 8
     dq arg6
     dq arg7
     dq arg8
-
-
-; ============================================================================================================================
-;                                                      RODATA
-; ============================================================================================================================
-
-; section .rodata
-
-; ; ======== JUMP TABLE FOR SPEC ==========
-
-; jump_table_spec:
-; align 8
-
-;     dq prcsng_b  - jump_table_spec      ; 0  = 'b'
-;     dq prcsng_c  - jump_table_spec      ; 1  = 'c'
-;     dq prcsng_d  - jump_table_spec      ; 2  = 'd'
-;     dq prcsng_un - jump_table_spec      ; 3  = 'e'
-;     dq prcsng_f  - jump_table_spec      ; 4  = 'f'
-;     dq prcsng_un - jump_table_spec      ; 5  = 'g'
-;     dq prcsng_un - jump_table_spec      ; 6  = 'h'
-;     dq prcsng_d  - jump_table_spec      ; 7  = 'i'
-;     dq prcsng_un - jump_table_spec      ; 8  = 'j'
-;     dq prcsng_un - jump_table_spec      ; 9  = 'k'
-;     dq prcsng_un - jump_table_spec      ; 10 = 'l'
-;     dq prcsng_un - jump_table_spec      ; 11 = 'm'
-;     dq prcsng_un - jump_table_spec      ; 12 = 'n'
-;     dq prcsng_o  - jump_table_spec      ; 13 = 'o'
-;     dq prcsng_p  - jump_table_spec      ; 14 = 'p'
-;     dq prcsng_un - jump_table_spec      ; 15 = 'q'
-;     dq prcsng_un - jump_table_spec      ; 16 = 'r'
-;     dq prcsng_s  - jump_table_spec      ; 17 = 's'
-;     dq prcsng_un - jump_table_spec      ; 18 = 't'
-;     dq prcsng_un - jump_table_spec      ; 19 = 'u'
-;     dq prcsng_un - jump_table_spec      ; 20 = 'v'
-;     dq prcsng_un - jump_table_spec      ; 21 = 'w'
-;     dq prcsng_x  - jump_table_spec      ; 22 = 'x'
-
-
-; ; ======== JUMP TABLE FOR FLOAT ARGS ==========
-
-; float_args:
-; align 8 
-
-;     dq arg1 - float_args
-;     dq arg2 - float_args
-;     dq arg3 - float_args
-;     dq arg4 - float_args
-;     dq arg5 - float_args
-;     dq arg6 - float_args
-;     dq arg7 - float_args
-;     dq arg8 - float_args
-
 
 ; ============================================================================================================================
 ;                                                       BSS
